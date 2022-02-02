@@ -1,32 +1,28 @@
 
 require('dotenv-safe').config();
 
+const axios = require("axios");
+
+const indicators = require('./indicators')
+const telegram = require('./telegram')
+
 const COIN_PAIRS = process.env.COIN_PAIRS.split(';');
 let lastmessages = [];
 
-function calcRSI(closes) {
-    let altas = 0;
-    let baixas = 0;
+function updateMessages (coinPair, status, infoLog) {
+    const itemToRemove = status === 'overbought' ? 'oversold' : 'overbought'; 
 
-    for (let i = closes.length - 15; i < closes.length - 1; i++) {
-        const diferenca = closes[i] - closes[i - 1];
-        if (diferenca >= 0)
-            altas += diferenca;
-        else
-            baixas -= diferenca;
+    lastmessages.push(`${coinPair}-${status}`);
+    const index = lastmessages.indexOf(`${coinPair}-${itemToRemove}`);
+    if (index > -1) {
+        lastmessages.splice(index, 1); 
     }
-
-    const forcaRelativa = altas / baixas;
-    return 100 - (100 / (1 + forcaRelativa));
+    
+    console.log(`${coinPair}-${status}`);
+    //telegram.sendMessage(`[${status}] ${infoLog}`);
 }
 
-const { Telegraf } = require("telegraf");
-const CHAT_ID = process.env.CHAT_ID;
-const bot = new Telegraf(`${process.env.BOT_TOKEN}`);
-
 async function app() {
-
-    const axios = require("axios");
 
     COIN_PAIRS.forEach(async coinPair => {
         const response = await axios.get(`https://api.binance.com/api/v3/klines?symbol=${coinPair}&interval=1m`);
@@ -34,29 +30,20 @@ async function app() {
         const price = parseFloat(candle[4]);
     
         const closes = response.data.map(candle => parseFloat(candle[4]));
-        const rsi = calcRSI(closes);
-        const infoLog = `CoinPair: ${coinPair} RSI: ${rsi.toFixed(2)} Price: ${price.toFixed(2)}`;
+        //const rsi = indicators.calcRSI(closes);
+        const rsi = indicators.rsi(closes);
+        //const infoLog = `CoinPair: ${coinPair} RSI: ${rsi.toFixed(2)} Price: ${price.toFixed(2)}`;
+        const infoLog = 
+            `CoinPair: ${coinPair} RSI(6/14/24): ${rsi[0].toFixed(2)}/${rsi[1].toFixed(2)}/${rsi[2].toFixed(2)} Price: ${price.toFixed(2)}`;
         console.log(infoLog);
     
-        if (rsi >= 70 && !lastmessages.includes(`${coinPair}-overbought`)) {
-            lastmessages.push(`${coinPair}-overbought`);
-            const index = lastmessages.indexOf(`${coinPair}-oversold`);
-            if (index > -1) {
-                lastmessages.splice(index, 1); 
-            }
-            
-            console.log(`${coinPair}-overbought`);
-            bot.telegram.sendMessage(CHAT_ID, `[overbought] ${infoLog}`);
+        //if (rsi >= 70 && !lastmessages.includes(`${coinPair}-overbought`)) {
+        if ( (rsi[0] >= 70 || rsi[1] >= 70 || rsi[2] >= 70) && !lastmessages.includes(`${coinPair}-overbought`)) {
+            updateMessages(coinPair, 'overbought', infoLog);
         }
-        else if (rsi <= 30 && !lastmessages.includes(`${coinPair}-oversold`) ) {
-            lastmessages.push(`${coinPair}-oversold`);
-            const index = lastmessages.indexOf(`${coinPair}-overbought`);
-            if (index > -1) {
-                lastmessages.splice(index, 1); 
-            }
-
-            console.log(`${coinPair}-oversold`);
-            bot.telegram.sendMessage(CHAT_ID,  `[oversold] ${infoLog}`);
+        //else if (rsi <= 30 && !lastmessages.includes(`${coinPair}-oversold`) ) {
+        else if ( (rsi[0] <= 30 || rsi[1] <= 30 || rsi[2] <= 30) && !lastmessages.includes(`${coinPair}-oversold`) ) {
+            updateMessages(coinPair, 'oversold', infoLog);
         }
     })
 }
@@ -66,11 +53,7 @@ const msgLog =
     Monitoring Coin Pairs: ${COIN_PAIRS}\n`;
 
 setInterval(app, process.env.GET_API_INTERVAL || 5000);
-setInterval(
-    () => {bot.telegram.sendMessage(CHAT_ID,  msgLog)}, 
-    1000 * 60 * 8);
+//setInterval( () => { telegram.sendMessage(msgLog); }, 1000 * 60 * 60 * 8); // every 8 hours
 
 console.log(msgLog);
-bot.telegram.sendMessage(CHAT_ID,  msgLog)
-
-//app();
+//telegram.sendMessage(msgLog);
