@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  node:
+    container_name: bot-cripto-v1
+    image: node:14
+    ports:
+      - '3077:3077'
+    volumes:
+      - ./:/srv/app
+    working_dir: /srv/app
+    command: bash -c
+      'npm install && npm start'
